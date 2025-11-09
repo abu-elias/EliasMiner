@@ -1,159 +1,126 @@
-#!/usr/bin/env bash
-#
-# EliasMiner v3.2 - Smart Auto Mining Installer
-# Author: Elias
-# Description: Automatic optimized CPU mining setup using XMRig with smart CPU analysis (no benchmark needed)
-#
+#!/bin/bash
+# ==========================================
+#  💎 EliasMiner v3.3 - Smart Unique Worker Edition
+#  Author: Elias
+# ==========================================
 
-set -euo pipefail
-IFS=$'\n\t'
+# ---------- STYLING & UTILS ----------
+RED=$(tput setaf 1)
+GREEN=$(tput setaf 2)
+YELLOW=$(tput setaf 3)
+CYAN=$(tput setaf 6)
+MAGENTA=$(tput setaf 5)
+RESET=$(tput sgr0)
+BOLD=$(tput bold)
 
-# ---------- Styling ----------
-BOLD="\e[1m"; RESET="\e[0m"
-GREEN="\e[32m"; YELLOW="\e[33m"; RED="\e[31m"; CYAN="\e[36m"
-info(){ printf "${CYAN}💡 %s${RESET}\n" "$1"; }
-ok(){ printf "${GREEN}✅ %s${RESET}\n" "$1"; }
-warn(){ printf "${YELLOW}⚠️  %s${RESET}\n" "$1"; }
-err(){ printf "${RED}❌ %s${RESET}\n" "$1"; }
+spinner() {
+    local pid=$!
+    local spin='🌑🌒🌓🌔🌕🌖🌗🌘'
+    local i=0
+    while kill -0 $pid 2>/dev/null; do
+        i=$(((i + 1) % 8))
+        printf "\r${CYAN}${spin:$i:1}${RESET} Installing..."
+        sleep 0.1
+    done
+    printf "\r${GREEN}✅ Done!${RESET}\n"
+}
 
-# ---------- Check root ----------
-if [[ $EUID -ne 0 ]]; then
-  err "Run as root: sudo bash install.sh"
-  exit 1
-fi
+banner() {
+    clear
+    echo -e "${CYAN}"
+    echo "───────────────────────────────────────────────"
+    echo "        💎 E L I A S  M I N E R  v3.3"
+    echo "───────────────────────────────────────────────"
+    echo -e "${RESET}${BOLD}Smart. Fast. Beautiful.${RESET}\n"
+    sleep 0.5
+}
 
-# ---------- Paths ----------
-XMRIG_DIR="/opt/xmrig"
-CONF_FILE="$XMRIG_DIR/.elias_config"
-LOG_FILE="$XMRIG_DIR/setup.log"
-SYSTEMD_SERVICE="/etc/systemd/system/xmrig-elias@.service"
-MONITOR_SERVICE="/etc/systemd/system/elias-monitor.service"
-USER="miner"
+ok()   { echo -e " ${GREEN}✅${RESET} $1"; }
+info() { echo -e " ${CYAN}💡${RESET} $1"; }
+warn() { echo -e " ${YELLOW}⚠️${RESET} $1"; }
+err()  { echo -e " ${RED}❌${RESET} $1"; }
 
-mkdir -p "$XMRIG_DIR" && touch "$LOG_FILE"
+banner
 
-echo -e "${BOLD}${CYAN}───────────────────────────────────────────────"
-echo -e " 💎 EliasMiner v3.2 - Smart CPU Auto Setup"
-echo -e "───────────────────────────────────────────────${RESET}"
-
-# ---------- Coin Selection ----------
-if [[ -f "$CONF_FILE" ]]; then
-  source "$CONF_FILE"
-  info "Using existing configuration."
+# ---------- CHECK PREVIOUS CONFIG ----------
+CONFIG_FILE="/opt/xmrig/.elias_config"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+    echo -e "${YELLOW}Using existing configuration...${RESET}"
+    sleep 1
 else
-  echo -e "${CYAN}Select coin to mine:${RESET}"
-  echo " [1] TRX  (Tron)"
-  echo " [2] BTC  (Bitcoin)"
-  echo " [3] ETH  (Ethereum)"
-  echo " [4] LTC  (Litecoin)"
-  echo " [5] DOGE (Dogecoin)"
-  echo " [6] SHIB (Shiba Inu)"
-  echo " [7] XRP  (Ripple)"
-  echo " [8] BNB  (Binance Coin)"
-  echo " [9] USDT (Tether)"
-  echo " [10] ADA (Cardano)"
-  echo " [11] XMR (Monero)"
-  echo " [12] SOL (Solana)"
-  echo " [13] AVAX (Avalanche)"
-  echo " [14] MATIC (Polygon)"
-  echo " [15] DOT (Polkadot)"
-  read -rp "👉 Enter number [default=1]: " choice
-  case "${choice:-1}" in
-    1|"") COIN="TRX" ;;
-    2) COIN="BTC" ;;
-    3) COIN="ETH" ;;
-    4) COIN="LTC" ;;
-    5) COIN="DOGE" ;;
-    6) COIN="SHIB" ;;
-    7) COIN="XRP" ;;
-    8) COIN="BNB" ;;
-    9) COIN="USDT" ;;
-    10) COIN="ADA" ;;
-    11) COIN="XMR" ;;
-    12) COIN="SOL" ;;
-    13) COIN="AVAX" ;;
-    14) COIN="MATIC" ;;
-    15) COIN="DOT" ;;
-    *) COIN="TRX" ;;
-  esac
-  read -rp "Wallet address (no prefix): " WALLET
-  if [[ -z "$WALLET" ]]; then err "Wallet required."; exit 1; fi
-  echo "COIN=\"$COIN\"" > "$CONF_FILE"
-  echo "WALLET=\"$WALLET\"" >> "$CONF_FILE"
+    echo ""
+    echo -e "${BOLD}${MAGENTA}Let's set up your miner step by step!${RESET}\n"
+    echo "───────────────────────────────────────────────"
+    echo " 💎 Choose the coin you want to mine"
+    echo "───────────────────────────────────────────────"
+    echo " [1] TRX  | [2] BTC  | [3] ETH  | [4] LTC"
+    echo " [5] DOGE | [6] SHIB | [7] XRP  | [8] BNB"
+    echo " [9] USDT | [10] ADA | [11] XMR | [12] SOL"
+    echo "───────────────────────────────────────────────"
+    read -rp "👉 Enter number [default=1]: " CHOICE
+    CHOICE=${CHOICE:-1}
+    COINS=(TRX BTC ETH LTC DOGE SHIB XRP BNB USDT ADA XMR SOL)
+    COIN=${COINS[$((CHOICE-1))]}
+    echo ""
+    read -rp "💰 Wallet address (no prefix): " WALLET
+    info "Coin selected: $COIN"
+    info "Wallet starts with: ${WALLET:0:10}..."
 fi
 
-ok "Selected coin: $COIN"
-ok "Wallet: ${WALLET:0:10}..."
+# ---------- SMART UNIQUE WORKER NAME ----------
+echo ""
+echo "───────────────────────────────────────────────"
+echo " 💡 Worker Naming Setup"
+echo "───────────────────────────────────────────────"
+HOST_ID=$(hostname | cut -d'.' -f1 | tr '[:lower:]' '[:upper:]')
+DATE_ID=$(date +%d%b)
+HASH_ID=$(echo "$HOSTNAME-$RANDOM-$(date +%s)" | md5sum | cut -c1-4 | tr '[:lower:]' '[:upper:]')
+DEFAULT_WORKER="Elias-${COIN}-${HOST_ID}-${DATE_ID}-${HASH_ID}"
+read -rp "Enter a name for this Worker [default=$DEFAULT_WORKER]: " WORKER
+WORKER=${WORKER:-$DEFAULT_WORKER}
+ok "Selected Worker name: ${BOLD}${WORKER}${RESET}"
 
-# ---------- Install dependencies ----------
+mkdir -p /opt/xmrig
+echo "COIN=$COIN" > /opt/xmrig/.elias_config
+echo "WALLET=$WALLET" >> /opt/xmrig/.elias_config
+echo "WORKER=$WORKER" >> /opt/xmrig/.elias_config
+
+# ---------- INSTALL DEPENDENCIES ----------
 info "Installing dependencies..."
-apt update -y >> "$LOG_FILE" 2>&1
-apt install -y git build-essential cmake libuv1-dev libssl-dev libhwloc-dev \
-pkg-config wget curl jq bc lm-sensors util-linux netcat-openbsd linux-tools-common linux-tools-generic >> "$LOG_FILE" 2>&1
-ok "Dependencies installed."
+(apt update -y && apt install -y git build-essential cmake libuv1-dev libssl-dev libhwloc-dev curl jq > /dev/null 2>&1) & spinner
 
-# ---------- User setup ----------
-if ! id -u "$USER" >/dev/null 2>&1; then
-  info "Creating user '$USER'"
-  useradd -m -s /bin/bash "$USER"
-fi
-
-# ---------- Build XMRig ----------
-if [[ ! -x "$XMRIG_DIR/xmrig" ]]; then
-  info "Building XMRig..."
-  TMP=$(mktemp -d)
-  pushd "$TMP" >/dev/null
-  git clone https://github.com/xmrig/xmrig.git >> "$LOG_FILE" 2>&1
-  mkdir xmrig/build && cd xmrig/build
-  cmake .. >> "$LOG_FILE" 2>&1
-  make -j$(nproc) >> "$LOG_FILE" 2>&1
-  cp xmrig "$XMRIG_DIR/"
-  popd >/dev/null
-  rm -rf "$TMP"
-  chown -R "$USER":"$USER" "$XMRIG_DIR"
-  ok "XMRig built successfully."
+# ---------- INSTALL XMRIG ----------
+if [ ! -f /opt/xmrig/xmrig ]; then
+    info "Building XMRig..."
+    mkdir -p /opt/xmrig && cd /opt/xmrig
+    git clone https://github.com/xmrig/xmrig.git src > /dev/null 2>&1
+    mkdir build && cd build
+    cmake ../src > /dev/null 2>&1 && make -j$(nproc) > /dev/null 2>&1 & spinner
+    ok "XMRig built successfully."
 else
-  ok "Using existing XMRig binary."
+    ok "Using existing XMRig binary."
 fi
 
-# ---------- Detect country & best pool ----------
+# ---------- LOCATION DETECTION ----------
 info "Detecting location & selecting best pool..."
-COUNTRY=$(curl -s ipinfo.io/country || echo "EU")
-POOLS=("rx-eu.unmineable.com:443" "rx-us.unmineable.com:443" "rx-asia.unmineable.com:443" "rx-br.unmineable.com:443" "rx-au.unmineable.com:443")
-BEST_POOL="rx-eu.unmineable.com:443"
-BEST_LAT=99999
+LOCATION=$(curl -s ipinfo.io/country)
+case "$LOCATION" in
+    BR) POOL="rx-br.unmineable.com:443" ;;
+    AU) POOL="rx-au.unmineable.com:443" ;;
+    US) POOL="rx-us.unmineable.com:443" ;;
+    EU|GB|FR|DE) POOL="rx-eu.unmineable.com:443" ;;
+    *) POOL="rx-eu.unmineable.com:443" ;;
+esac
+ok "Detected: ${LOCATION:-Unknown}"
+ok "Selected pool: ${POOL}"
 
-for p in "${POOLS[@]}"; do
-  HOST=${p%%:*}
-  PORT=${p##*:}
-  START=$(date +%s%3N)
-  if echo > /dev/tcp/$HOST/$PORT 2>/dev/null; then
-    END=$(date +%s%3N)
-    LAT=$((END - START))
-    [[ $LAT -lt $BEST_LAT ]] && BEST_LAT=$LAT && BEST_POOL=$p
-  fi
-done
-
-ok "Selected pool: $BEST_POOL (latency: ${BEST_LAT}ms)"
-
-# ---------- Enable HugePages & Governor ----------
-sysctl -w vm.nr_hugepages=$(nproc) >> "$LOG_FILE" 2>&1
-ok "HugePages enabled."
-cpupower frequency-set -g performance >/dev/null 2>&1 || true
-ok "Governor set to performance (if supported)."
-
-# ---------- Smart CPU analysis (no benchmark) ----------
+# ---------- CPU ANALYSIS ----------
 info "Analyzing CPU cores using lscpu..."
 PHYSICAL_CORES=$(lscpu | awk -F: '/Core\(s\) per socket/ {c=$2} /Socket\(s\)/ {s=$2} END{print c*s}' | xargs)
 LOGICAL_CORES=$(nproc)
-if [[ -z "$PHYSICAL_CORES" || "$PHYSICAL_CORES" -le 0 ]]; then
-  PHYSICAL_CORES=$LOGICAL_CORES
-fi
-if [[ "$PHYSICAL_CORES" -gt 1 ]]; then
-  THREADS=$((PHYSICAL_CORES - 1))
-else
-  THREADS=1
-fi
+[ -z "$PHYSICAL_CORES" ] && PHYSICAL_CORES=$LOGICAL_CORES
+THREADS=$((PHYSICAL_CORES>1 ? PHYSICAL_CORES-1 : 1))
 if grep -q avx2 /proc/cpuinfo; then
   BOOST="AVX2"
 elif grep -q sse4_2 /proc/cpuinfo; then
@@ -161,93 +128,62 @@ elif grep -q sse4_2 /proc/cpuinfo; then
 else
   BOOST="Generic"
 fi
+ok "CPU: $(lscpu | awk -F: '/Model name/ {print $2}' | xargs)"
+ok "Cores: $PHYSICAL_CORES | Feature: $BOOST | Threads: $THREADS"
 
-ok "CPU Model: $(lscpu | awk -F: '/Model name/ {print $2}' | xargs)"
-ok "Cores detected: $PHYSICAL_CORES physical / $LOGICAL_CORES logical"
-ok "Feature set: $BOOST"
-ok "Recommended threads: $THREADS"
-
-# ---------- Generate config ----------
-cat > "$XMRIG_DIR/config-Elias1.json" <<EOF
+# ---------- CREATE CONFIG ----------
+info "Creating optimized config.json..."
+cat > /opt/xmrig/config.json <<EOF
 {
- "autosave": true,
- "cpu": { "enabled": true, "huge-pages": true, "max-threads-hint": $THREADS },
- "pools": [
-   {
-     "algo": "rx",
-     "url": "$BEST_POOL",
-     "user": "$COIN:$WALLET.Elias1",
-     "pass": "x",
-     "keepalive": true,
-     "tls": true
-   }
- ]
+    "autosave": true,
+    "cpu": { "enabled": true, "huge-pages": true, "max-threads-hint": 100 },
+    "pools": [
+        {
+            "algo": "rx/0",
+            "coin": null,
+            "url": "$POOL",
+            "user": "$COIN:$WALLET.$WORKER",
+            "pass": "x",
+            "tls": true
+        }
+    ]
 }
 EOF
-chown "$USER":"$USER" "$XMRIG_DIR/config-Elias1.json"
+ok "Config created."
 
-# ---------- systemd services ----------
-cat > "$SYSTEMD_SERVICE" <<'SERVICE'
+# ---------- SERVICE SETUP ----------
+info "Setting up auto-start service..."
+cat > /etc/systemd/system/xmrig-elias@.service <<EOF
 [Unit]
-Description=Elias XMRig instance %i
+Description=EliasMiner %i
 After=network.target
 
 [Service]
-User=miner
-WorkingDirectory=/opt/xmrig
-ExecStart=/opt/xmrig/xmrig -c /opt/xmrig/config-Elias%i.json
+ExecStart=/opt/xmrig/build/xmrig -c /opt/xmrig/config.json
 Restart=always
-RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-SERVICE
+EOF
 
 systemctl daemon-reload
-systemctl enable xmrig-elias@1.service --now
+systemctl enable xmrig-elias@1.service > /dev/null 2>&1
+systemctl start xmrig-elias@1.service
 ok "Mining service started."
 
-# ---------- Auto monitor ----------
-cat > "$XMRIG_DIR/elias_monitor.sh" <<'MON'
-#!/usr/bin/env bash
-while true; do
-  for u in $(systemctl list-units --type=service --no-legend 'xmrig-elias@*' | awk '{print $1}'); do
-    if ! systemctl is-active --quiet "$u"; then
-      systemctl restart "$u"
-    fi
-  done
-  sleep 30
-done
-MON
-
-chmod +x "$XMRIG_DIR/elias_monitor.sh"
-
-cat > "$MONITOR_SERVICE" <<'MONS'
-[Unit]
-Description=EliasMiner Auto Monitor
-After=network.target
-
-[Service]
-User=miner
-ExecStart=/opt/xmrig/elias_monitor.sh
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-MONS
-
-systemctl enable --now elias-monitor.service
-
-# ---------- Summary ----------
-echo -e "${GREEN}┌────────────────────────────────────────────┐${RESET}"
-echo -e "${GREEN}│ 🚀 EliasMiner v3.2 - Setup Complete!       │${RESET}"
-echo -e "${GREEN}└────────────────────────────────────────────┘${RESET}"
-echo -e "${CYAN}Coin:${RESET} $COIN"
-echo -e "${CYAN}Pool:${RESET} $BEST_POOL"
-echo -e "${CYAN}Threads:${RESET} $THREADS"
-echo -e "${CYAN}Service:${RESET} xmrig-elias@1.service"
-echo -e "${CYAN}Monitor:${RESET} elias-monitor.service"
-echo -e "${CYAN}Logs:${RESET} journalctl -u xmrig-elias@1 -f"
-echo -e "${CYAN}Uninstall:${RESET} sudo rm -rf /opt/xmrig /etc/systemd/system/xmrig-elias@.service /etc/systemd/system/elias-monitor.service"
+# ---------- COMPLETION ----------
+echo ""
+echo -e "${CYAN}┌────────────────────────────────────────────┐${RESET}"
+echo -e "${CYAN}│ 🚀 ${BOLD}EliasMiner v3.3 - Setup Complete!${RESET}${CYAN}       │${RESET}"
+echo -e "${CYAN}└────────────────────────────────────────────┘${RESET}"
+echo " Coin     : $COIN"
+echo " Pool     : $POOL"
+echo " Worker   : $WORKER"
+echo " Threads  : $THREADS"
+echo ""
+echo " Service  : xmrig-elias@1.service"
+echo " Logs     : journalctl -u xmrig-elias@1 -f"
+echo ""
 ok "Mining started automatically and enabled on boot!"
+echo ""
+echo -e "${BOLD}${MAGENTA}💎 Happy Mining, Elias! 💎${RESET}"
