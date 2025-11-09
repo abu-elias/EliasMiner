@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# EliasMiner v3.1 - Stable Release
+# EliasMiner v3.2 - Smart Auto Mining Installer
 # Author: Elias
-# Description: Fully automatic optimized XMRig CPU mining setup.
-# Works on Ubuntu 20.04/22.04 VPS or dedicated servers.
+# Description: Automatic optimized CPU mining setup using XMRig with smart CPU analysis (no benchmark needed)
 #
+
 set -euo pipefail
 IFS=$'\n\t'
 
-# ---------- UI Styling ----------
+# ---------- Styling ----------
 BOLD="\e[1m"; RESET="\e[0m"
 GREEN="\e[32m"; YELLOW="\e[33m"; RED="\e[31m"; CYAN="\e[36m"
 info(){ printf "${CYAN}💡 %s${RESET}\n" "$1"; }
@@ -16,9 +16,9 @@ ok(){ printf "${GREEN}✅ %s${RESET}\n" "$1"; }
 warn(){ printf "${YELLOW}⚠️  %s${RESET}\n" "$1"; }
 err(){ printf "${RED}❌ %s${RESET}\n" "$1"; }
 
-# ---------- Pre-check ----------
+# ---------- Check root ----------
 if [[ $EUID -ne 0 ]]; then
-  err "Run as root (sudo bash install.sh)"
+  err "Run as root: sudo bash install.sh"
   exit 1
 fi
 
@@ -33,10 +33,10 @@ USER="miner"
 mkdir -p "$XMRIG_DIR" && touch "$LOG_FILE"
 
 echo -e "${BOLD}${CYAN}───────────────────────────────────────────────"
-echo -e " 💎 EliasMiner v3.1 - Auto Optimized Setup"
+echo -e " 💎 EliasMiner v3.2 - Smart CPU Auto Setup"
 echo -e "───────────────────────────────────────────────${RESET}"
 
-# ---------- Coin selection ----------
+# ---------- Coin Selection ----------
 if [[ -f "$CONF_FILE" ]]; then
   source "$CONF_FILE"
   info "Using existing configuration."
@@ -81,6 +81,7 @@ else
   echo "COIN=\"$COIN\"" > "$CONF_FILE"
   echo "WALLET=\"$WALLET\"" >> "$CONF_FILE"
 fi
+
 ok "Selected coin: $COIN"
 ok "Wallet: ${WALLET:0:10}..."
 
@@ -135,40 +136,38 @@ done
 
 ok "Selected pool: $BEST_POOL (latency: ${BEST_LAT}ms)"
 
-# ---------- CPU & HugePages ----------
-LOGICAL=$(nproc)
-PHYSICAL=$(lscpu | awk -F: '/Core\(s\) per socket/ {c=$2} /Socket\(s\)/ {s=$2} END{print c*s}' | xargs)
-[[ -z "$PHYSICAL" ]] && PHYSICAL=$LOGICAL
-INSTANCES=1
-THREADS=$PHYSICAL
-
+# ---------- Enable HugePages & Governor ----------
 sysctl -w vm.nr_hugepages=$(nproc) >> "$LOG_FILE" 2>&1
 ok "HugePages enabled."
-
 cpupower frequency-set -g performance >/dev/null 2>&1 || true
 ok "Governor set to performance (if supported)."
 
-# ---------- Benchmark safe (skip if slow) ----------
-info "Running short benchmark (max 30s)..."
-TMP_CONF="/tmp/xmrig_bench.json"
-cat > "$TMP_CONF" <<EOF
-{
- "autosave": true,
- "cpu": { "enabled": true, "huge-pages": true, "max-threads-hint": $THREADS },
- "pools": [ { "algo": "rx", "url": "$BEST_POOL", "user": "$COIN:$WALLET.BENCH", "pass": "x", "tls": true } ]
-}
-EOF
-
-timeout 30s "$XMRIG_DIR/xmrig" -c "$TMP_CONF" > /tmp/bench.log 2>&1 || true
-SPEED=$(grep -m1 "speed 10s" /tmp/bench.log | awk '{print $(NF-2)}')
-if [[ -z "$SPEED" ]]; then
-  warn "Benchmark skipped (too slow or unsupported)."
-else
-  ok "Benchmark complete (~${SPEED} H/s)"
+# ---------- Smart CPU analysis (no benchmark) ----------
+info "Analyzing CPU cores using lscpu..."
+PHYSICAL_CORES=$(lscpu | awk -F: '/Core\(s\) per socket/ {c=$2} /Socket\(s\)/ {s=$2} END{print c*s}' | xargs)
+LOGICAL_CORES=$(nproc)
+if [[ -z "$PHYSICAL_CORES" || "$PHYSICAL_CORES" -le 0 ]]; then
+  PHYSICAL_CORES=$LOGICAL_CORES
 fi
-rm -f "$TMP_CONF"
+if [[ "$PHYSICAL_CORES" -gt 1 ]]; then
+  THREADS=$((PHYSICAL_CORES - 1))
+else
+  THREADS=1
+fi
+if grep -q avx2 /proc/cpuinfo; then
+  BOOST="AVX2"
+elif grep -q sse4_2 /proc/cpuinfo; then
+  BOOST="SSE4.2"
+else
+  BOOST="Generic"
+fi
 
-# ---------- Create config ----------
+ok "CPU Model: $(lscpu | awk -F: '/Model name/ {print $2}' | xargs)"
+ok "Cores detected: $PHYSICAL_CORES physical / $LOGICAL_CORES logical"
+ok "Feature set: $BOOST"
+ok "Recommended threads: $THREADS"
+
+# ---------- Generate config ----------
 cat > "$XMRIG_DIR/config-Elias1.json" <<EOF
 {
  "autosave": true,
@@ -187,7 +186,7 @@ cat > "$XMRIG_DIR/config-Elias1.json" <<EOF
 EOF
 chown "$USER":"$USER" "$XMRIG_DIR/config-Elias1.json"
 
-# ---------- systemd service ----------
+# ---------- systemd services ----------
 cat > "$SYSTEMD_SERVICE" <<'SERVICE'
 [Unit]
 Description=Elias XMRig instance %i
@@ -206,9 +205,9 @@ SERVICE
 
 systemctl daemon-reload
 systemctl enable xmrig-elias@1.service --now
-ok "Service created and started."
+ok "Mining service started."
 
-# ---------- Monitor ----------
+# ---------- Auto monitor ----------
 cat > "$XMRIG_DIR/elias_monitor.sh" <<'MON'
 #!/usr/bin/env bash
 while true; do
@@ -242,7 +241,7 @@ systemctl enable --now elias-monitor.service
 
 # ---------- Summary ----------
 echo -e "${GREEN}┌────────────────────────────────────────────┐${RESET}"
-echo -e "${GREEN}│ 🚀 EliasMiner v3.1 - Setup Complete!       │${RESET}"
+echo -e "${GREEN}│ 🚀 EliasMiner v3.2 - Setup Complete!       │${RESET}"
 echo -e "${GREEN}└────────────────────────────────────────────┘${RESET}"
 echo -e "${CYAN}Coin:${RESET} $COIN"
 echo -e "${CYAN}Pool:${RESET} $BEST_POOL"
@@ -251,4 +250,4 @@ echo -e "${CYAN}Service:${RESET} xmrig-elias@1.service"
 echo -e "${CYAN}Monitor:${RESET} elias-monitor.service"
 echo -e "${CYAN}Logs:${RESET} journalctl -u xmrig-elias@1 -f"
 echo -e "${CYAN}Uninstall:${RESET} sudo rm -rf /opt/xmrig /etc/systemd/system/xmrig-elias@.service /etc/systemd/system/elias-monitor.service"
-ok "Mining started and auto-enabled on reboot!"
+ok "Mining started automatically and enabled on boot!"
