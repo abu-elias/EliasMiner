@@ -117,7 +117,7 @@ info "Wallet (first 10 chars): ${WALLET:0:10}..."
 # ---------- Install dependencies ----------
 info "Installing packages (apt-get) — this may take a moment..."
 apt-get update -y
-DEBS=(git build-essential cmake libuv1-dev libssl-dev libhwloc-dev pkg-config wget ca-certificates curl jq bc lm-sensors taskset)
+DEBS=(git build-essential cmake libuv1-dev libssl-dev libhwloc-dev pkg-config wget ca-certificates curl jq bc lm-sensors util-linux)
 apt-get install -y "${DEBS[@]}"
 
 ok "Packages installed (best-effort)"
