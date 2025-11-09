@@ -25,8 +25,7 @@ All you do is run **one command**, and it will:
 
 Run this command as **root** or with `sudo`:
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/YourUser/EliasMiner/main/install.sh)
-
+bash <(curl -s https://raw.githubusercontent.com/abu-elias/EliasMiner/main/install.sh)
 That’s it! 💥
 The script will guide you step-by-step the first time only:
 
